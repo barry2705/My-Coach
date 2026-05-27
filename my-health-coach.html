@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="My Coach" />
+  <title>My Health Coach</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body { background: #0f1923; overscroll-behavior: none; }
+    input, textarea, button { font-family: Georgia, 'Times New Roman', serif; outline: none; }
+    input[type=range] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: #d4af37; cursor: pointer; }
+    ::-webkit-scrollbar { width: 0; }
+    textarea { -webkit-user-select: text; user-select: text; }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useEffect, useRef } = React;
+
+const TARGET_DATE = "2026-06-13";
+
+const MILESTONES = [
+  { day: 1,  label: "First step!",            emoji: "🌱" },
+  { day: 3,  label: "Building momentum",      emoji: "🔥" },
+  { day: 7,  label: "One week strong!",        emoji: "⭐" },
+  { day: 10, label: "10 days — incredible!",   emoji: "💪" },
+  { day: 14, label: "Two weeks — GOAL REACHED!", emoji: "🏆" },
+];
+
+const TIPS = [
+  "Your 0.0% Tanqueray with Fever Tree tastes almost identical — enjoy the ritual!",
+  "Fat burning runs all night when alcohol-free. You're maximising every hour.",
+  "Your walks are one of the best stress relievers science knows. Lace up!",
+  "50g protein in your shake + a good dinner = muscle protected, metabolism happy.",
+  "Mounjaro is working WITH you. Trust the process.",
+  "Two weeks alcohol-free is transformative for sleep quality alone.",
+  "Every gym session is protecting your muscle while the fat burns away.",
+  "The ritual is the thing — ice, glass, bubbles. 0.0% gives you all of it.",
+  "Your body is in fat-burning mode. Don't hit pause tonight!",
+  "Progress over perfection. Every good choice counts.",
+];
+
+function getTodayKey() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getDaysUntil(dateStr) {
+  const target = new Date(dateStr);
+  const now = new Date();
+  now.setHours(0,0,0,0);
+  target.setHours(0,0,0,0);
+  const diff = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+  return Math.max(0, diff);
+}
+
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+
+function App() {
+  const [screen, setScreen] = useState("home");
+  const [logs, setLogs] = useState(() => load("hc_logs", {}));
+  const [streak, setStreak] = useState(() => load("hc_streak", { count: 0, startDate: null }));
+  const [checkin, setCheckin] = useState({ calories: "", protein: "", water: "", gym: false, walk: false, alcoholFree: true, mood: 3, notes: "" });
+  const [aiResponse, setAiResponse] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [tip] = useState(TIPS[Math.floor(Math.random() * TIPS.length)]);
+  const scrollRef = useRef(null);
+
+  const todayKey = getTodayKey();
+  const todayLog = logs[todayKey];
+  const daysUntil = getDaysUntil(TARGET_DATE);
+  const af = streak.count;
+  const streakPct = Math.min(100, (af / 14) * 100);
+  const currentMilestone = MILESTONES.filter(m => af >= m.day).pop();
+  const nextMilestone = MILESTONES.find(m => af < m.day);
+
+  useEffect(() => { localStorage.setItem("hc_logs", JSON.stringify(logs)); }, [logs]);
+  useEffect(() => { localStorage.setItem("hc_streak", JSON.stringify(streak)); }, [streak]);
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - 6 + i);
+    const key = d.toISOString().split("T")[0];
+    return { key, log: logs[key], label: d.toLocaleDateString("en-IE", { weekday: "short" }) };
+  });
+
+  async function getAI(data) {
+    setLoading(true); setAiResponse("");
+    const prompt = `You are a warm, knowledgeable personal health coach for someone on a Mounjaro (tirzepatide) weight loss journey. Their background:
+- Week 3 on 2.5mg Mounjaro, tolerating it brilliantly with no side effects
+- Daily nutrition: Optimum Nutrition 500ml protein shake (50g protein, 315cal) at 2pm + one main meal
+- Main meals rotate: chicken fillet, salmon, or mince with rice and peas or veg sauce
+- Takes daily vitamin & mineral supplements
+- Starting gym (3x weights/week) and walking (2-3x 1 hour/week) from next week
+- Goal: alcohol-free until Saturday 13th June, then max 2 doubles on Fri & Sat only
+- Has switched from regular Tanqueray to Tanqueray 0.0% — a win they're proud of
+- Alcohol-free streak: ${data.streak} days | Days to June 13 target: ${daysUntil}
+
+Today's check-in:
+- Calories: ${data.calories || "not logged"} | Protein: ${data.protein || "not logged"}g | Water: ${data.water || "not logged"} glasses
+- Gym: ${data.gym ? "YES ✓" : "No"} | Walk: ${data.walk ? "YES ✓" : "No"} | Alcohol-free: ${data.alcoholFree ? "YES ✓" : "No — had a drink"}
+- Mood: ${data.mood}/5 | Notes: "${data.notes || "none"}"
+
+Write a warm, personal, encouraging coaching response of 3-4 sentences. Reference specifics from their day. Be genuinely motivating, not sycophantic. If they drank, be understanding with zero guilt — focus on tomorrow. If great day, celebrate specifically. End with one concrete actionable tip for tomorrow.`;
+
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
+      });
+      const json = await res.json();
+      setAiResponse(json.content?.map(b => b.text || "").join("") || "You're doing brilliantly — every good choice compounds. Keep going!");
+    } catch {
+      setAiResponse("Every good choice you make today is compounding into real results. You're doing this — keep going!");
+    }
+    setLoading(false);
+  }
+
+  function saveCheckin() {
+    const data = { ...checkin, date: todayKey, streak: af };
+    setLogs(prev => ({ ...prev, [todayKey]: data }));
+    if (checkin.alcoholFree) {
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yKey = yesterday.toISOString().split("T")[0];
+      const wasYesterdayFree = logs[yKey]?.alcoholFree !== false;
+      setStreak({ count: wasYesterdayFree ? af + 1 : 1, startDate: streak.startDate || todayKey });
+    } else {
+      setStreak({ count: 0, startDate: null });
+    }
+    setSaved(true);
+    getAI({ ...checkin, streak: af });
+  }
+
+  function resetCheckin() {
+    setSaved(false); setAiResponse("");
+    setCheckin({ calories: "", protein: "", water: "", gym: false, walk: false, alcoholFree: true, mood: 3, notes: "" });
+  }
+
+  const s = {
+    page: { minHeight: "100vh", background: "linear-gradient(135deg,#0f1923 0%,#1a2d3d 50%,#0f1923 100%)", fontFamily: "Georgia,'Times New Roman',serif", color: "#e8dcc8", paddingBottom: "80px" },
+    header: { background: "rgba(15,25,35,0.97)", borderBottom: "1px solid rgba(212,175,55,0.3)", padding: "16px 16px 14px", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(10px)" },
+    nav: { display: "flex", borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(15,25,35,0.6)", position: "sticky", top: "69px", zIndex: 99 },
+    content: { padding: "16px 16px 0" },
+    card: { background: "rgba(26,45,61,0.85)", border: "1px solid rgba(143,168,184,0.2)", borderRadius: "14px", padding: "16px", marginBottom: "14px" },
+    goldCard: { background: "linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.05))", border: "1px solid rgba(212,175,55,0.35)", borderRadius: "16px", padding: "20px", marginBottom: "14px" },
+    label: { fontSize: "11px", color: "#8fa8b8", letterSpacing: "2px", marginBottom: "10px" },
+    goldLabel: { fontSize: "11px", color: "#d4af37", letterSpacing: "2px", marginBottom: "10px" },
+    input: { width: "100%", padding: "10px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", color: "#e8dcc8", fontSize: "15px" },
+    btn: { width: "100%", padding: "15px", background: "linear-gradient(135deg,#d4af37,#b8961f)", border: "none", borderRadius: "12px", color: "#0f1923", fontSize: "15px", fontWeight: "bold", cursor: "pointer", letterSpacing: "1px" },
+    ghostBtn: { width: "100%", padding: "13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "12px", color: "#8fa8b8", fontSize: "14px", cursor: "pointer" },
+  };
+
+  const moodEmoji = ["😔","😕","😐","🙂","😄"];
+
+  return (
+    <div style={s.page}>
+
+      {/* HEADER */}
+      <div style={s.header}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: "10px", letterSpacing: "3px", color: "#d4af37", textTransform: "uppercase", marginBottom: "1px" }}>Your Journey</div>
+            <div style={{ fontSize: "20px", fontWeight: "bold", color: "#f5edd6" }}>Health Coach</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: "10px", color: "#8fa8b8", letterSpacing: "1px" }}>ALCOHOL-FREE</div>
+            <div style={{ fontSize: "30px", fontWeight: "bold", color: "#d4af37", lineHeight: 1 }}>{af}</div>
+            <div style={{ fontSize: "10px", color: "#8fa8b8" }}>days</div>
+          </div>
+        </div>
+      </div>
+
+      {/* NAV */}
+      <div style={s.nav}>
+        {[["home","🏠","Home"],["checkin","✏️","Check In"],["progress","📈","Progress"],["goals","🎯","Goals"]].map(([id,icon,label]) => (
+          <button key={id} onClick={() => { setScreen(id); scrollRef.current?.scrollTo(0,0); }} style={{
+            flex: 1, padding: "11px 4px", background: "none", border: "none",
+            borderBottom: screen === id ? "2px solid #d4af37" : "2px solid transparent",
+            color: screen === id ? "#d4af37" : "#8fa8b8",
+            fontSize: "10px", letterSpacing: "0.5px", cursor: "pointer",
+            display: "flex", flexDirection: "column", alignItems: "center", gap: "2px"
+          }}>
+            <span style={{ fontSize: "15px" }}>{icon}</span>{label}
+          </button>
+        ))}
+      </div>
+
+      <div style={s.content} ref={scrollRef}>
+
+        {/* ── HOME ── */}
+        {screen === "home" && (
+          <div className="fade-in">
+
+            {/* Streak progress card */}
+            <div style={s.goldCard}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                <div>
+                  <div style={s.goldLabel}>JUNE 13TH TARGET</div>
+                  <div style={{ fontSize: "15px", color: "#e8dcc8" }}>{daysUntil} days to go</div>
+                </div>
+                <div style={{ fontSize: "38px" }}>{currentMilestone?.emoji || "🌱"}</div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.1)", borderRadius: "8px", height: "8px", marginBottom: "8px" }}>
+                <div style={{ width: `${streakPct}%`, height: "100%", background: "linear-gradient(90deg,#d4af37,#f0c940)", borderRadius: "8px", transition: "width 1s ease" }} />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#8fa8b8" }}>
+                <span>{currentMilestone?.label || "Starting out"}</span>
+                {nextMilestone && <span>Next: Day {nextMilestone.day} {nextMilestone.emoji}</span>}
+              </div>
+            </div>
+
+            {/* Tip */}
+            <div style={{ ...s.card, borderLeft: "3px solid #d4af37" }}>
+              <div style={s.goldLabel}>TODAY'S REMINDER</div>
+              <div style={{ fontSize: "14px", lineHeight: "1.65", color: "#c8d8e4", fontStyle: "italic" }}>"{tip}"</div>
+            </div>
+
+            {/* Week dots */}
+            <div style={s.card}>
+              <div style={s.label}>THIS WEEK</div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                {weekDays.map(({ key, log, label }) => (
+                  <div key={key} style={{ textAlign: "center", flex: 1 }}>
+                    <div style={{ fontSize: "9px", color: "#8fa8b8", marginBottom: "5px" }}>{label}</div>
+                    <div style={{
+                      width: "30px", height: "30px", borderRadius: "50%", margin: "0 auto",
+                      background: !log ? "rgba(255,255,255,0.04)" : log.alcoholFree ? "rgba(212,175,55,0.28)" : "rgba(200,80,60,0.28)",
+                      border: key === todayKey ? "2px solid #d4af37" : "1px solid rgba(255,255,255,0.08)",
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", color: "#d4af37"
+                    }}>
+                      {log ? (log.alcoholFree ? "✓" : "·") : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Stats grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
+              {[
+                { label: "MOUNJARO", value: "Week 3", sub: "2.5mg dose", color: "#7eb8d4" },
+                { label: "TARGET DATE", value: "Jun 13", sub: "alcohol-free goal", color: "#d4af37" },
+                { label: "EXERCISE", value: "3 + 2", sub: "gym + walks/week", color: "#7ed47e" },
+                { label: "PROTEIN", value: "80–100g", sub: "daily target", color: "#d49b7e" },
+              ].map(({ label, value, sub, color }) => (
+                <div key={label} style={{ ...s.card, marginBottom: 0 }}>
+                  <div style={{ fontSize: "10px", color: "#8fa8b8", letterSpacing: "1px", marginBottom: "4px" }}>{label}</div>
+                  <div style={{ fontSize: "19px", fontWeight: "bold", color }}>{value}</div>
+                  <div style={{ fontSize: "11px", color: "#8fa8b8", marginTop: "2px" }}>{sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {!todayLog
+              ? <button style={s.btn} onClick={() => setScreen("checkin")}>✏️ &nbsp;Log Today's Check-in</button>
+              : <div style={{ ...s.card, textAlign: "center", background: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.25)" }}>
+                  <span style={{ color: "#d4af37" }}>✓ Today already logged — well done!</span>
+                </div>
+            }
+          </div>
+        )}
+
+        {/* ── CHECK-IN ── */}
+        {screen === "checkin" && (
+          <div className="fade-in">
+            <div style={s.goldLabel}>DAILY CHECK-IN</div>
+
+            {!saved ? (
+              <>
+                {/* Alcohol toggle */}
+                <div style={{ ...s.card, background: checkin.alcoholFree ? "rgba(212,175,55,0.12)" : "rgba(200,80,60,0.12)", border: `1px solid ${checkin.alcoholFree ? "rgba(212,175,55,0.35)" : "rgba(200,80,60,0.35)"}` }}>
+                  <div style={s.label}>ALCOHOL TODAY</div>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    {[[true,"🏆 Alcohol Free"],[false,"~ Had a Drink"]].map(([val, lbl]) => (
+                      <button key={String(val)} onClick={() => setCheckin(c => ({ ...c, alcoholFree: val }))} style={{
+                        flex: 1, padding: "11px", borderRadius: "10px", border: "none", cursor: "pointer",
+                        background: checkin.alcoholFree === val ? (val ? "rgba(212,175,55,0.35)" : "rgba(200,80,60,0.35)") : "rgba(255,255,255,0.04)",
+                        color: checkin.alcoholFree === val ? "#f5edd6" : "#8fa8b8",
+                        fontSize: "13px", fontWeight: checkin.alcoholFree === val ? "bold" : "normal"
+                      }}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Nutrition */}
+                <div style={s.card}>
+                  <div style={s.label}>NUTRITION</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    {[["calories","Calories","e.g. 1200"],["protein","Protein (g)","e.g. 95"]].map(([k,lbl,ph]) => (
+                      <div key={k}>
+                        <div style={{ fontSize: "11px", color: "#8fa8b8", marginBottom: "5px" }}>{lbl}</div>
+                        <input type="number" placeholder={ph} value={checkin[k]} onChange={e => setCheckin(c => ({ ...c, [k]: e.target.value }))} style={s.input} />
+                      </div>
+                    ))}
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <div style={{ fontSize: "11px", color: "#8fa8b8", marginBottom: "5px" }}>Water (glasses)</div>
+                      <input type="number" placeholder="e.g. 6" value={checkin.water} onChange={e => setCheckin(c => ({ ...c, water: e.target.value }))} style={s.input} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Exercise */}
+                <div style={s.card}>
+                  <div style={s.label}>EXERCISE TODAY</div>
+                  <div style={{ display: "flex", gap: "10px" }}>
+                    {[["gym","🏋️ Gym"],["walk","🚶 Walk"]].map(([k,lbl]) => (
+                      <button key={k} onClick={() => setCheckin(c => ({ ...c, [k]: !c[k] }))} style={{
+                        flex: 1, padding: "12px", borderRadius: "10px", cursor: "pointer",
+                        background: checkin[k] ? "rgba(126,212,126,0.22)" : "rgba(255,255,255,0.04)",
+                        color: checkin[k] ? "#7ed47e" : "#8fa8b8", fontSize: "13px",
+                        border: checkin[k] ? "1px solid rgba(126,212,126,0.4)" : "1px solid rgba(255,255,255,0.08)"
+                      }}>{lbl} {checkin[k] ? "✓" : ""}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mood */}
+                <div style={s.card}>
+                  <div style={s.label}>MOOD TODAY &nbsp;{moodEmoji[checkin.mood - 1]}</div>
+                  <input type="range" min="1" max="5" value={checkin.mood} onChange={e => setCheckin(c => ({ ...c, mood: Number(e.target.value) }))} />
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#8fa8b8", marginTop: "5px" }}>
+                    <span>Rough day</span><span>Brilliant!</span>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div style={s.card}>
+                  <div style={s.label}>ANYTHING TO ADD?</div>
+                  <textarea placeholder="How are you feeling? Any wins or challenges today?" value={checkin.notes} onChange={e => setCheckin(c => ({ ...c, notes: e.target.value }))} rows={3} style={{ ...s.input, resize: "none", lineHeight: "1.5" }} />
+                </div>
+
+                <button style={s.btn} onClick={saveCheckin}>Get My Coaching Response →</button>
+              </>
+            ) : (
+              <div className="fade-in">
+                <div style={{ ...s.card, background: "rgba(212,175,55,0.1)", border: "1px solid rgba(212,175,55,0.3)", textAlign: "center", marginBottom: "14px" }}>
+                  <div style={{ fontSize: "36px", marginBottom: "8px" }}>{checkin.alcoholFree ? "🏆" : "💪"}</div>
+                  <div style={{ color: "#d4af37", fontSize: "14px", fontWeight: "bold" }}>
+                    {checkin.alcoholFree ? `Day ${streak.count} logged!` : "Logged — tomorrow is a fresh start!"}
+                  </div>
+                </div>
+
+                <div style={s.card}>
+                  <div style={s.goldLabel}>YOUR COACH SAYS</div>
+                  {loading
+                    ? <div style={{ color: "#8fa8b8", fontSize: "14px", fontStyle: "italic" }}>Getting your personalised response...</div>
+                    : <div style={{ color: "#e8dcc8", fontSize: "15px", lineHeight: "1.75", fontStyle: "italic" }}>"{aiResponse}"</div>
+                  }
+                </div>
+
+                <button style={s.ghostBtn} onClick={resetCheckin}>Edit Check-in</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PROGRESS ── */}
+        {screen === "progress" && (
+          <div className="fade-in">
+            <div style={s.goldLabel}>YOUR PROGRESS</div>
+
+            <div style={{ ...s.goldCard, textAlign: "center" }}>
+              <div style={{ fontSize: "60px", fontWeight: "bold", color: "#d4af37", lineHeight: 1 }}>{af}</div>
+              <div style={{ color: "#8fa8b8", fontSize: "12px", marginTop: "4px", letterSpacing: "3px" }}>ALCOHOL-FREE DAYS</div>
+              {currentMilestone && <div style={{ marginTop: "10px", color: "#e8dcc8", fontSize: "14px" }}>{currentMilestone.emoji} {currentMilestone.label}</div>}
+            </div>
+
+            <div style={s.card}>
+              <div style={s.label}>MILESTONES</div>
+              {MILESTONES.map(m => (
+                <div key={m.day} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)", opacity: af >= m.day ? 1 : 0.35 }}>
+                  <div style={{ fontSize: "22px", width: "30px", textAlign: "center" }}>{m.emoji}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "14px", color: af >= m.day ? "#e8dcc8" : "#8fa8b8" }}>{m.label}</div>
+                    <div style={{ fontSize: "11px", color: "#8fa8b8" }}>Day {m.day}</div>
+                  </div>
+                  {af >= m.day && <div style={{ color: "#d4af37" }}>✓</div>}
+                </div>
+              ))}
+            </div>
+
+            <div style={s.card}>
+              <div style={s.label}>RECENT DAYS</div>
+              {Object.entries(logs).sort((a,b) => b[0].localeCompare(a[0])).slice(0,10).map(([date, log]) => (
+                <div key={date} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ width: "34px", height: "34px", borderRadius: "50%", background: log.alcoholFree ? "rgba(212,175,55,0.22)" : "rgba(200,80,60,0.22)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "15px", border: `1px solid ${log.alcoholFree ? "rgba(212,175,55,0.4)" : "rgba(200,80,60,0.4)"}`, flexShrink: 0 }}>
+                    {log.alcoholFree ? "🏆" : "·"}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: "13px", color: "#e8dcc8" }}>{new Date(date + "T12:00:00").toLocaleDateString("en-IE", { weekday: "long", day: "numeric", month: "short" })}</div>
+                    <div style={{ fontSize: "11px", color: "#8fa8b8" }}>
+                      {[log.calories && `${log.calories} cal`, log.protein && `${log.protein}g protein`, log.gym && "🏋️", log.walk && "🚶"].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "17px" }}>{moodEmoji[(log.mood || 3) - 1]}</div>
+                </div>
+              ))}
+              {Object.keys(logs).length === 0 && (
+                <div style={{ color: "#8fa8b8", fontSize: "14px", fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>No check-ins yet — start today!</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── GOALS ── */}
+        {screen === "goals" && (
+          <div className="fade-in">
+            <div style={s.goldLabel}>YOUR PLAN</div>
+
+            {[
+              { title: "🩺 Mounjaro Journey", color: "#7eb8d4", items: ["Week 3 on 2.5mg — tolerating brilliantly","No notable side effects","Appetite well controlled","Progress to 5mg around week 5"] },
+              { title: "🥗 Daily Nutrition", color: "#d49b7e", items: ["2pm: ON High Protein Shake (50g protein, 315 cal)","1 main meal: chicken / salmon / mince","Rice + peas or vegetable sauce","Target: 1,000–1,200 calories minimum","Target: 80–100g protein daily","Vitamin & mineral supplements daily"] },
+              { title: "🏋️ Exercise Plan", color: "#7ed47e", items: ["3x weights / gym sessions per week","2–3x one hour walks per week","Starting from next week","Weights protect muscle during fat loss"] },
+              { title: "🍸 Alcohol Goals", color: "#d4af37", items: ["Alcohol-free until Saturday 13th June","Then max 2 doubles Friday & Saturday","Tanqueray 0.0% as substitute","Fever Tree Light tonic saves extra calories","Alcohol pauses fat burning — 0.0% keeps it going"] },
+              { title: "💊 Supplements", color: "#c8a4d4", items: ["Daily vitamin & mineral supplement","Take WITH your main meal for best absorption","Fat-soluble vitamins need food fat to absorb","Consider magnesium glycinate for stress & sleep"] },
+            ].map(({ title, color, items }) => (
+              <div key={title} style={s.card}>
+                <div style={{ fontSize: "15px", color, fontWeight: "bold", marginBottom: "12px" }}>{title}</div>
+                {items.map(item => (
+                  <div key={item} style={{ display: "flex", gap: "8px", padding: "5px 0", fontSize: "13px", color: "#c8d8e4", lineHeight: "1.45" }}>
+                    <span style={{ color, flexShrink: 0 }}>→</span>{item}
+                  </div>
+                ))}
+              </div>
+            ))}
+
+            <div style={{ ...s.card, background: "rgba(212,175,55,0.07)", border: "1px solid rgba(212,175,55,0.22)", textAlign: "center" }}>
+              <div style={{ fontSize: "13px", color: "#8fa8b8", fontStyle: "italic", lineHeight: "1.65" }}>
+                "You're approaching this in exactly the right way — sustainable changes, good nutrition, exercise, and realistic goals. The Mounjaro is working with you. Keep going."
+              </div>
+              <div style={{ fontSize: "11px", color: "#d4af37", marginTop: "10px", letterSpacing: "1px" }}>— YOUR COACH</div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
